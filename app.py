@@ -4,6 +4,9 @@ from google import genai
 from google.genai import types
 import urllib.parse
 from fpdf import FPDF
+import csv
+import os
+
 
 # Configuração da página
 st.set_page_config(page_title="William - Professor de Tênis & Personal", page_icon="🎾", layout="wide")
@@ -20,7 +23,8 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("📌 Módulos do Sistema")
-    modulo = st.radio("Escolha a ferramenta:", ["🎾 Treino de Tênis", "💪 Personal Training"])
+    modulo = st.radio("Módulos do Sistema:",["🎾 Treino de Tênis", "💪 Personal Training", "💰 Controle Financeiro"]
+)
 
 # Título principal dinâmico
 st.markdown(
@@ -408,3 +412,161 @@ elif modulo == "💪 Personal Training":
 
                 except Exception as e:
                     st.error(f"Erro ao gerar periodização: {e}")
+
+elif modulo == "💰 Controle Financeiro":
+    st.markdown("### 💰 Gestão Financeira & Fluxo de Caixa")
+
+    ARQUIVO_FIN = "financeiro_william.csv"
+    COLUNAS = ["Tipo", "Data", "Nome_Descricao", "Modalidade_Categoria", "Plano", "Valor", "Status", "Observacoes"]
+
+    def carregar_dados():
+        if not os.path.exists(ARQUIVO_FIN):
+            return []
+        with open(ARQUIVO_FIN, mode="r", encoding="utf-8") as f:
+            leitor = csv.DictReader(f)
+            dados = []
+            for linha in leitor:
+                linha["Valor"] = float(linha["Valor"])
+                dados.append(linha)
+            return dados
+
+    def salvar_dados(lista_dados):
+        with open(ARQUIVO_FIN, mode="w", newline="", encoding="utf-8") as f:
+            escritor = csv.DictWriter(f, fieldnames=COLUNAS)
+            escritor.writeheader()
+            escritor.writerows(lista_dados)
+
+    registros = carregar_dados()
+
+    with st.expander("⚙️ Configurar Chave PIX para Cobranças"):
+        chave_pix = st.text_input("Sua Chave PIX (CPF, E-mail, Celular ou Aleatória)", placeholder="Ex: william@email.com")
+
+    # 1. KPIs - Indicadores Financeiros
+    receitas_pagas = sum(r["Valor"] for r in registros if r["Tipo"] == "Receita" and r["Status"] == "Pago")
+    receitas_pendentes = sum(r["Valor"] for r in registros if r["Tipo"] == "Receita" and r["Status"] in ["Pendente", "Atrasado"])
+    despesas_totais = sum(r["Valor"] for r in registros if r["Tipo"] == "Despesa")
+    lucro_liquido = receitas_pagas - despesas_totais
+    alunos_unicos = set(r["Nome_Descricao"] for r in registros if r["Tipo"] == "Receita")
+    ticket_medio = (receitas_pagas / len(alunos_unicos)) if len(alunos_unicos) > 0 else 0.0
+
+    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+    col_m1.metric("💵 Recebido (Caixa)", f"R$ {receitas_pagas:,.2f}")
+    col_m2.metric("⏳ A Receber", f"R$ {receitas_pendentes:,.2f}")
+    col_m3.metric("📉 Despesas", f"R$ {despesas_totais:,.2f}")
+    col_m4.metric("📈 Lucro Líquido", f"R$ {lucro_liquido:,.2f}")
+    col_m5.metric("🎯 Ticket Médio", f"R$ {ticket_medio:,.2f}")
+
+    st.markdown("---")
+
+    aba_lancar, aba_tabela, aba_cobrar = st.tabs([
+        "➕ Novo Lançamento", "📊 Planilha Editável & Backup", "📲 Cobrança WhatsApp"
+    ])
+
+    with aba_lancar:
+        tipo_lancamento = st.radio("Tipo de Movimentação:", ["Receita (Aluno)", "Despesa (Custo Operacional)"], horizontal=True)
+
+        with st.form("form_financeiro", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if tipo_lancamento == "Receita (Aluno)":
+                    nome_desc = st.text_input("Nome do Aluno", placeholder="Ex: Carlos Mendes")
+                    categoria = st.selectbox("Modalidade", ["Tênis", "Personal Training", "Consultoria Online", "Avaliação Física"])
+                else:
+                    nome_desc = st.text_input("Descrição da Despesa", placeholder="Ex: 3 Tubos de Bola / Aluguel Quadra")
+                    categoria = st.selectbox("Categoria de Custo", ["Material Esportivo (Bolas/Cordas)", "Locação de Quadra/Espaço", "Transporte/Combustível", "Marketing/Sistemas", "Outros"])
+            with c2:
+                valor = st.number_input("Valor (R$)", min_value=0.0, step=10.0, format="%.2f")
+                data_venc = st.date_input("Data (Vencimento ou Pagamento)")
+            with c3:
+                if tipo_lancamento == "Receita (Aluno)":
+                    plano = st.selectbox("Plano / Formato", ["Mensal (1x sem)", "Mensal (2x sem)", "Mensal (3x+ sem)", "Pacote 8 Aulas", "Pacote 10 Aulas", "Aula Avulsa"])
+                    status = st.selectbox("Status", ["Pago", "Pendente", "Atrasado"])
+                else:
+                    plano = "Custo Fixo/Variável"
+                    status = st.selectbox("Status", ["Pago", "Pendente"])
+                obs_fin = st.text_input("Observações", placeholder="Ex: Via PIX, vence dia 10...")
+
+            btn_salvar_fin = st.form_submit_button("Salvar Lançamento", type="primary")
+
+        if btn_salvar_fin:
+            if not nome_desc or valor <= 0:
+                st.warning("Preencha o nome/descrição e um valor maior que zero.")
+            else:
+                registros.append({
+                    "Tipo": "Receita" if tipo_lancamento == "Receita (Aluno)" else "Despesa",
+                    "Data": str(data_venc),
+                    "Nome_Descricao": nome_desc,
+                    "Modalidade_Categoria": categoria,
+                    "Plano": plano,
+                    "Valor": float(valor),
+                    "Status": status,
+                    "Observacoes": obs_fin
+                })
+                salvar_dados(registros)
+                st.success("Lançamento registrado com sucesso!")
+                st.rerun()
+
+        with aba_tabela:
+            if not registros:
+             st.info("Nenhum lançamento cadastrado ainda.")
+            else:
+             st.markdown("#### 📋 Lista de Movimentações")
+            for idx, item in enumerate(registros):
+                cor_status = "✅" if item["Status"] == "Pago" else ("⚠️" if item["Status"] == "Atrasado" else "⏳")
+                c_info, c_acao1, c_acao2 = st.columns([4, 1.5, 1])
+                with c_info:
+                    st.write(f"**{cor_status} {item['Nome_Descricao']}** ({item['Modalidade_Categoria']} - {item['Plano']}) | **{item['Data']}** | **R$ {item['Valor']:,.2f}** — *{item['Status']}*")
+                with c_acao1:
+                    if item["Status"] != "Pago":
+                        if st.button("✅ Dar Baixa", key=f"pagar_{idx}"):
+                            registros[idx]["Status"] = "Pago"
+                            salvar_dados(registros)
+                            st.rerun()
+                with c_acao2:
+                    if st.button("🗑️", key=f"del_{idx}", help="Excluir lançamento"):
+                        registros.pop(idx)
+                        salvar_dados(registros)
+                        st.rerun()
+                st.divider()
+
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            if os.path.exists(ARQUIVO_FIN):
+                with open(ARQUIVO_FIN, "rb") as f:
+                    st.download_button(
+                        "📥 Baixar Planilha Backup (.csv)",
+                        data=f.read(),
+                        file_name="Backup_Financeiro_William.csv",
+                        mime="text/csv"
+                    )
+        with col_b2:
+            arquivo_up = st.file_uploader("Restaurar Backup (.csv)", type=["csv"], label_visibility="collapsed")
+            if arquivo_up is not None:
+                with open(ARQUIVO_FIN, "wb") as f:
+                    f.write(arquivo_up.getvalue())
+                st.success("Backup restaurado com sucesso!")
+                st.rerun()
+
+            with aba_cobrar:
+                pendentes = [r for r in registros if r["Tipo"] == "Receita" and r["Status"] in ["Pendente", "Atrasado"]]
+        if not pendentes:
+            st.success("Nenhum aluno com pagamento pendente ou atrasado no momento!")
+        else:
+            nomes_pendentes = list(dict.fromkeys(r["Nome_Descricao"] for r in pendentes))
+            aluno_sel = st.selectbox("Selecione o aluno para enviar lembrete:", nomes_pendentes)
+            dados_aluno = next(r for r in pendentes if r["Nome_Descricao"] == aluno_sel)
+
+            pix_texto = f"\n🔑 Chave PIX: {chave_pix}" if chave_pix else ""
+            msg_cobranca = (
+                f"Olá {aluno_sel}, tudo bem? Passando para lembrar sobre a sua mensalidade/pacote de "
+                f"{dados_aluno['Modalidade_Categoria']} ({dados_aluno['Plano']}) com vencimento em {dados_aluno['Data']}.\n"
+                f"💰 Valor: R$ {dados_aluno['Valor']:,.2f}{pix_texto}\n\n"
+                f"Qualquer dúvida estou à disposição. Bons treinos!"
+            )
+
+            st.text_area("Prévia da mensagem:", value=msg_cobranca, height=140)
+            link_wpp_fin = f"https://wa.me{urllib.parse.quote(msg_cobranca)}"
+            st.link_button(f"📲 Enviar Cobrança para {aluno_sel} via WhatsApp", link_wpp_fin, type="primary")
+
+                
+
