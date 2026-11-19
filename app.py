@@ -63,7 +63,7 @@ def mostrar_area_aluno():
             div_sel = st.selectbox("Escolha o treino do dia:", divisoes, key="sel_div_aluno")
             treino_dia = [t for t in treinos if t["divisao"] == div_sel]
 
-            st.markdown(f"### {div_sel} — Foco: {treino_dia['foco_divisao']}")
+            st.markdown(f"### {div_sel} — Foco: {treino_dia[0]['foco_divisao']}")
             for t in treino_dia:
                 with st.expander(f"{t['ordem']}. {t['exercicio']} ({t['series']}x{t['repeticoes']})", expanded=True):
                     st.write(f"**Grupo:** {t['grupo_muscular']} | **Cadência:** {t['cadencia']} | **Descanso:** {t['descanso']}s | **Técnica:** {t['tecnica']}")
@@ -435,13 +435,66 @@ Regras obrigatórias:
                     with col1:
                         div = st.selectbox("Divisão", ["Treino A", "Treino B", "Treino C", "Treino D", "Treino E", "Full Body"])
                         grp = st.selectbox("Grupo Muscular", ["Peito", "Costas", "Ombros", "Bíceps", "Tríceps", "Quadríceps", "Posterior de Coxa", "Glúteos", "Panturrilha", "Abdômen", "Cardio"])
-                        ex_nome = st.selectbox("Nome do Exercício", ["Supino Reto", "Supino Inclinado", "Crucifixo", "Puxada Frontal", "Remada Curvada", "Remada Baixa", "Desenvolvimento", "Elevação Lateral", "Rosca Direta", "Tríceps Pulley", "Agachamento Livre", "Leg Press 45", "Cadeira Extensora", "Mesa Flexora", "Elevação Pélvica", "Panturrilha em Pé", "Abdominal Supra"])
+                        ex_nome = st.selectbox("Nome do Exercício", [
+                    # Peito
+                    "Supino Reto", "Supino Inclinado", "Supino Declinado", "Supino com Halteres", "Crucifixo Reto", "Crucifixo Inclinado", "Cross Over", "Peck Deck (Voador)", "Flexão de Braço",
+                    # Costas
+                    "Puxada Frontal", "Puxada Triângulo", "Remada Curvada", "Remada Baixa", "Remada Unilateral (Serrote)", "Remada Cavalinho", "Pulldown", "Barra Fixa",
+                    # Ombros
+                    "Desenvolvimento com Halteres", "Desenvolvimento Militar", "Elevação Lateral", "Elevação Frontal", "Crucifixo Inverso", "Encolhimento de Ombros",
+                    # Bíceps e Tríceps
+                    "Rosca Direta", "Rosca Alternada", "Rosca Martelo", "Rosca Scott", "Tríceps Pulley", "Tríceps Corda", "Tríceps Testa", "Tríceps Francês", "Mergulho no Banco",
+                    # Pernas e Glúteos
+                    "Agachamento Livre", "Agachamento Hack", "Leg Press 45", "Cadeira Extensora", "Mesa Flexora", "Cadeira Flexora", "Stiff", "Afundo / Passada", "Elevação Pélvica", "Cadeira Abdutora", "Cadeira Adutora", "Panturrilha em Pé", "Panturrilha Sentado",
+                    # Abdômen e Core
+                    "Abdominal Supra", "Abdominal Infra", "Abdominal Remador", "Prancha Isométrica"
+                ])
 
-            if "Aluno" in perfil_p:
-                mostrar_area_aluno()
-                
+                        ser = st.number_input("Séries", min_value=1, max_value=20, value=3, step=1)
+                        cad = st.text_input("Cadência (ex: 3010)", value="3010")
+                    with col2:
+                        foco = st.selectbox("Foco da Divisão", ["Hipertrofia", "Força", "Resistência Muscular", "Emagrecimento / Condicionamento", "Reabilitação / Mobilidade", "Potência"])
+                        ord_ex = st.text_input("Ordem (ex: 1, 1A, 1B)", value="1")
+                        rep = st.number_input("Repetições", min_value=1, max_value=100, value=10, step=1)
+                        desc = st.number_input("Descanso (s)", min_value=0, max_value=600, value=60, step=15)
+                    tec = st.selectbox("Técnica", ["Normal", "Bi-set", "Tri-set", "Giant-set", "Circuito", "Drop-set", "Rest-pause", "Pirâmide", "Isometria", "Falha"])
+                    inst = st.text_area("Instruções de Execução")
+                    adap = st.text_input("Adaptação Clínica / Restrição")
+                    vid = st.text_input("Link do Vídeo (YouTube)")
+                    if st.form_submit_button("💾 Salvar Exercício", use_container_width=True):
+                        conn = get_conn()
+                        conn.execute(
+                            """INSERT INTO treinos (aluno, divisao, foco_divisao, grupo_muscular, ordem, exercicio, series, repeticoes, cadencia, descanso, tecnica, instrucoes, adaptacao_clinica, video_url)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (sel, div, foco, grp, ord_ex, ex_nome, ser, rep, cad, desc, tec, inst, adap, vid)
+                        )
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Exercício '{ex_nome}' salvo para {sel}!")
+
+                with t3:
+                    st.subheader("📋 Fichas Ativas")
+                conn = get_conn()
+                treinos_salvos = conn.execute("SELECT * FROM treinos ORDER BY aluno, divisao, CAST(ordem AS INTEGER), ordem").fetchall()
+                conn.close()
+                if not treinos_salvos:
+                    st.info("Nenhum treino prescrito ainda.")
+                else:
+                    for item in treinos_salvos:
+                        c1, c2 = st.columns([0.9, 0.1])
+                        with c1:
+                            st.write(f"**{item['aluno']}** | {item['divisao']} ({item['foco_divisao']}) — **{item['ordem']}. {item['exercicio']}** ({item['series']}x{item['repeticoes']}, {item['descanso']}s)")
+                        with c2:
+                            if st.button("🗑️", key=f"del_treino_{item['id']}"):
+                                conn = get_conn()
+                                conn.execute("DELETE FROM treinos WHERE id = ?", (item['id'],))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
 
                     
+                
+
 elif modulo == "💰 Controle Financeiro":
     st.markdown("### 💰 Gestão Financeira & Fluxo de Caixa")
 
