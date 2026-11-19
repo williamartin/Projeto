@@ -7,6 +7,74 @@ from fpdf import FPDF
 import csv
 import os
 
+import sqlite3
+
+def get_conn():
+    conn = sqlite3.connect("academia.db")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS alunos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT,
+            objetivo TEXT,
+            condicao_clinica TEXT,
+            observacoes_medicas TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS treinos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            aluno TEXT,
+            divisao TEXT,
+            foco_divisao TEXT,
+            grupo_muscular TEXT,
+            ordem INTEGER,
+            exercicio TEXT,
+            series INTEGER,
+            repeticoes INTEGER,
+            cadencia TEXT,
+            descanso INTEGER,
+            tecnica TEXT,
+            instrucoes TEXT,
+            adaptacao_clinica TEXT,
+            video_url TEXT
+        )
+    """)
+    conn.commit()
+    return conn
+def mostrar_area_aluno():
+    st.subheader("📱 Área do Aluno")
+    conn = get_conn()
+    alunos = [row["nome"] for row in conn.execute("SELECT nome FROM alunos ORDER BY nome").fetchall()]
+
+    if not alunos:
+        st.info("Nenhum aluno cadastrado ainda.")
+    else:
+        aluno_sel = st.selectbox("Selecione seu nome:", alunos, key="sel_aluno_area")
+        treinos = conn.execute(
+            "SELECT divisao, foco_divisao, grupo_muscular, ordem, exercicio, series, repeticoes, cadencia, descanso, tecnica, instrucoes, adaptacao_clinica, video_url FROM treinos WHERE aluno = ? ORDER BY divisao, ordem",
+            (aluno_sel,)
+        ).fetchall()
+
+        if not treinos:
+            st.warning("Você ainda não possui treinos prescritos.")
+        else:
+            divisoes = list(dict.fromkeys([t["divisao"] for t in treinos]))
+            div_sel = st.selectbox("Escolha o treino do dia:", divisoes, key="sel_div_aluno")
+            treino_dia = [t for t in treinos if t["divisao"] == div_sel]
+
+            st.markdown(f"### {div_sel} — Foco: {treino_dia['foco_divisao']}")
+            for t in treino_dia:
+                with st.expander(f"{t['ordem']}. {t['exercicio']} ({t['series']}x{t['repeticoes']})", expanded=True):
+                    st.write(f"**Grupo:** {t['grupo_muscular']} | **Cadência:** {t['cadencia']} | **Descanso:** {t['descanso']}s | **Técnica:** {t['tecnica']}")
+                    if t["instrucoes"]:
+                        st.write(f"**Execução:** {t['instrucoes']}")
+                    if t["adaptacao_clinica"]:
+                        st.warning(f"**Adaptação Clínica:** {t['adaptacao_clinica']}")
+                    if t["video_url"]:
+                        st.video(t["video_url"])
+    conn.close()
+
 
 # Configuração da página
 st.set_page_config(page_title="William - Professor de Tênis & Personal", page_icon="🎾", layout="wide")
@@ -40,6 +108,8 @@ st.markdown(
 # Pegando data e hora atual no fuso do Brasil
 data_atual = datetime.now().strftime("%d/%m/%Y")
 hora_atual = datetime.now().strftime("%H:%M")
+if api_key:
+    client = genai.Client(api_key=api_key) 
 
 # ==========================================
 # MÓDULO 1: TREINO DE TÊNIS
@@ -200,219 +270,178 @@ if modulo == "🎾 Treino de Tênis":
 # MÓDULO 2: PERSONAL TRAINING
 # ==========================================
 elif modulo == "💪 Personal Training":
-    st.markdown("### 🏋️ Planejamento de Musculação & Periodização Profissional")
+    perfil_p = st.radio("Modo de Acesso:", ["🏋️ Personal", "📱 Aluno"], horizontal=True)
+    st.markdown("---")
+    if "Aluno" in perfil_p:
+        mostrar_area_aluno()
+    
 
-    with st.form("form_personal"):
-        # 1. Dados Biométricos e Anamnese
-        st.markdown("#### 👤 Perfil e Anamnese do Aluno")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            nome_aluno_p = st.text_input("Nome do Aluno", placeholder="Ex: Mariana Souza")
-        with col2:
-            idade_p = st.number_input("Idade", min_value=12, max_value=100, value=30)
-        with col3:
-            peso_p = st.number_input("Peso (kg)", min_value=30.0, max_value=250.0, value=70.0, step=0.5)
-        with col4:
-            altura_p = st.number_input("Altura (cm)", min_value=100, max_value=230, value=170)
+    elif perfil_p == "🏋️ Personal":
+        t_ia, t1, t2, t3 = st.tabs([
+            "🤖 Gerar com IA",
+            "1️⃣ Cadastrar Aluno",
+            "2️⃣ Prescrever Treino (Manual)",
+            "3️⃣ Fichas Ativas"
+        ])
 
-        col_anam1, col_anam2 = st.columns(2)
-        with col_anam1:
-            historico_p = st.selectbox(
-                "Histórico Recente de Treino",
-                ["Treinando continuamente há mais de 6 meses", "Iniciando agora (Sedentário)", "Retornando após pausa (Destreinado)", "Atleta / Alto Rendimento"]
-            )
-        with col_anam2:
-            recuperacao_p = st.selectbox(
-                "Qualidade do Sono e Estresse",
-                ["Sono bom e estresse controlado", "Sono irregular / Estresse moderado", "Pouco sono / Estresse elevado (Ajustar volume)"]
-            )
+        # --- ABA 0: GERADOR COM IA ---
+        with t_ia:
+            st.subheader("🤖 Prescrição Inteligente com IA")
+            with st.form("form_personal"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    nome_aluno_p = st.text_input("Nome do Aluno")
+                with col2:
+                    idade_p = st.number_input("Idade", min_value=10, max_value=100, value=30)
+                with col3:
+                    sexo_p = st.selectbox("Sexo", ["Masculino", "Feminino"])
 
-        # 2. Periodização, Rotina e Cardio
-        st.markdown("---")
-        st.markdown("#### 📅 Estrutura e Periodização (Mesociclo)")
-        col5, col6, col7 = st.columns(3)
-        with col5:
-            objetivo_p = st.selectbox("Objetivo Principal", ["Hipertrofia", "Emagrecimento / Definição", "Força Máxima", "Resistência Muscular", "Saúde e Longevidade"])
-            mesociclo_p = st.selectbox("Duração do Mesociclo", ["4 semanas", "6 semanas", "8 semanas", "12 semanas"])
-        with col6:
-            experiencia_p = st.selectbox("Nível Técnico", ["Iniciante", "Intermediário", "Avançado"])
-            frequencia_p = st.selectbox("Frequência Semanal", ["2x na semana", "3x na semana", "4x na semana", "5x na semana", "6x na semana"])
-        with col7:
-            duracao_p = st.number_input("Tempo por Sessão (min)", min_value=30, max_value=180, value=60, step=10)
-            cardio_p = st.selectbox("Protocolo de Cardio", ["Não incluir cardio", "LISS (Moderado contínuo pós-treino)", "HIIT (Alta intensidade pós-treino)", "Cardio em horário separado / dias off"])
+                col4, col5, col6 = st.columns(3)
+                with col4:
+                    peso_p = st.number_input("Peso (kg)", min_value=30.0, max_value=250.0, value=70.0, step=0.5)
+                with col5:
+                    altura_p = st.number_input("Altura (cm)", min_value=120, max_value=230, value=170)
+                with col6:
+                    nivel_p = st.selectbox("Nível de Experiência", ["Iniciante", "Intermediário", "Avançado"])
 
-        col_loc1, col_loc2 = st.columns(2)
-        with col_loc1:
-            local_p = st.selectbox("Local de Treino", ["Academia", "Treino em Casa / Condomínio", "Estúdio / Box"])
-        with col_loc2:
-            equipamentos_p = st.multiselect(
-                "Equipamentos Disponíveis",
-                ["Máquinas e Cabos", "Halteres", "Barra e Anilhas", "Elásticos", "Peso do Corpo", "Kettlebell"],
-                default=["Máquinas e Cabos", "Halteres", "Barra e Anilhas"]
-            )
-
-        # 3. Divisão Muscular Estilo MuscleWiki
-        st.markdown("---")
-        st.markdown("#### 🎯 Divisão por Grupos Musculares (Superiores e Inferiores)")
-
-        tipo_divisao_p = st.radio(
-            "Modelo de Organização:",
-            ["Superiores e Inferiores Separados (Upper / Lower)", "Divisão Tradicional (ABC / ABCD)", "Foco Específico nos Músculos Selecionados"],
-            horizontal=True
-        )
-
-        col_sup, col_inf = st.columns(2)
-        with col_sup:
-            st.markdown("**💪 Membros Superiores e Core**")
-            musculos_sup_p = st.multiselect(
-                "Grupos Superiores:",
-                ["Peitoral", "Costas (Dorsais)", "Ombros (Deltoides)", "Bíceps", "Tríceps", "Antebraço", "Abdômen / Core"],
-                default=["Peitoral", "Costas (Dorsais)", "Ombros (Deltoides)", "Bíceps", "Tríceps"]
-            )
-
-        with col_inf:
-            st.markdown("**🦵 Membros Inferiores**")
-            musculos_inf_p = st.multiselect(
-                "Grupos Inferiores:",
-                ["Quadríceps", "Posterior de Coxa (Isquiotibiais)", "Glúteos", "Panturrilhas", "Adutores / Abdutores"],
-                default=["Quadríceps", "Posterior de Coxa (Isquiotibiais)", "Glúteos", "Panturrilhas"]
-            )
-
-            st.markdown("---")
-            st.markdown("#### 🩺 Avaliação Clínica, Patologias e Restrições")
-        
-        condicoes_p = st.multiselect(
-            "Selecione condições de saúde ou lesões diagnosticadas:",
-            [
-                "Nenhuma condição especial",
-                "Hérnia de Disco Lombar (L4-L5 / L5-S1)",
-                "Hérnia de Disco Cervical",
-                "Condromalácia Patelar / Dor no Joelho",
-                "Lesão no Ombro (Tendinite / Bursite / Manguito)",
-                "Hipertensão Arterial (Pressão Alta)",
-                "Diabetes Tipo 1 ou 2",
-                "Osteopenia / Osteoporose",
-                "Desvios Posturais (Escoliose / Hiperlordose)",
-                "Gestante ou Pós-Parto",
-                "Fibromialgia / Fadiga Crônica"
-            ],
-            default=["Nenhuma condição especial"]
-        )
-
-        lesoes_p = st.text_area(
-            "Detalhes clínicos, medicamentos ou liberação médica:",
-            placeholder="Ex: Protusão em L5-S1 sem dor aguda no momento; toma losartana; liberado pelo ortopedista..."
-        )
-
-
-        submit_p = st.form_submit_button("Gerar Periodização Completa", type="primary")
-
-    if submit_p:
-        if not api_key:
-            st.error("Insira sua API Key na barra lateral.")
-        elif not nome_aluno_p:
-            st.warning("Preencha o Nome do Aluno.")
-        else:
-            with st.spinner("Calculando volume, RPE e estruturando mesociclo..."):
-                try:
-                    client = genai.Client(api_key=api_key)
-
-                    sys_prompt_personal = """
-                    Você é um Personal Trainer e Fisiologista do Exercício de elite.
-                    Crie periodizações seguras, baseadas em ciência, biomecânica e controle de carga (RPE/RIR).
-                    """
-
-                    user_prompt_personal = f"""
-                    Elabore um planejamento completo de treino para:
-                    - Aluno: {nome_aluno_p} | Idade: {idade_p} anos | Peso: {peso_p} kg | Altura: {altura_p} cm
-                    - Histórico: {historico_p} | Recuperação/Sono: {recuperacao_p}
-                    - Objetivo: {objetivo_p} | Nível Técnico: {experiencia_p}
-                    - Duração do Mesociclo: {mesociclo_p} | Frequência: {frequencia_p} | Duração por sessão: {duracao_p} min
-                    - Cardio: {cardio_p}
-                    - Local: {local_p} | Equipamentos: {', '.join(equipamentos_p)}
-                    - Condições de Saúde / Patologias: {', '.join(condicoes_p)}
-                    - Detalhes Clínicos / Observações: {lesoes_p if lesoes_p else 'Nenhum detalhe adicional'}
-                    - Organização: {tipo_divisao_p}
-                    - Superiores: {', '.join(musculos_sup_p)}
-                    - Inferiores: {', '.join(musculos_inf_p)}
-
-                    REGRAS DE SEGURANÇA CLÍNICA (OBRIGATÓRIO):
-                    - Se houver patologias listadas (como Hérnia de Disco, Condromalácia, Hipertensão, etc.), crie uma seção inicial chamada **⚠️ Adaptações Clínicas e Contraindicações** listando exatamente quais exercícios foram evitados (ex: evitar compressão axial/flexão lombar com carga na hérnia, evitar isometria prolongada/Valsalva na hipertensão) e quais exercícios corretivos/estabilizadores (ex: core stability, McGill Big 3) foram incluídos.
-
-                    Estrutura obrigatória da resposta:
-                    1. **⚠️ Adaptações Clínicas e Contraindicações** (caso haja condição selecionada).
-                    2. **Resumo da Estratégia & Progressão ({mesociclo_p})**: Progressão dupla e semana de Deload.
-                    3. **Aquecimento & Mobilidade (5-8 min)**: 3 exercícios específicos de preparação articular e estabilidade protetora.
-                    4. **Divisão dos Treinos**: Separe claramente os treinos (ex: Treino A - Superiores, Treino B - Inferiores). Para CADA exercício informe:
-                       - Nome do Exercício e Músculo Alvo
-                       - Séries x Repetições | Descanso | Intensidade (RPE ou RIR)
-                       - Dica rápida de biomecânica segura adaptada à condição do aluno
-                       - Link clicável exato: [🎥 Ver Execução](https://youtube.com) (substitua NOME+DO+EXERCICIO usando sinais de +).
-                    5. **Protocolo de Cardio**: Tempo e intensidade ({cardio_p}).
-                    """
-
-                    response = client.models.generate_content(
-                        model="gemini-3.5-flash-lite",
-                        contents=user_prompt_personal,
-                        config=types.GenerateContentConfig(
-                            system_instruction=sys_prompt_personal
-                        )
+                col7, col8 = st.columns(2)
+                with col7:
+                    objetivo_p = st.selectbox(
+                        "Objetivo Principal",
+                        ["Hipertrofia", "Emagrecimento", "Condicionamento Físico", "Força", "Reabilitação / Saúde"]
+                    )
+                with col8:
+                    local_treino_p = st.selectbox(
+                        "Local / Estrutura de Treino",
+                        ["Academia Completa", "Condomínio / Academia Básica", "Em Casa (Peso do Corpo / Elásticos)"]
                     )
 
-                    texto_ficha = response.text
-                    st.success("Periodização gerada com sucesso!")
-                    st.markdown("---")
-                    st.markdown(texto_ficha)
+                dias_treino_p = st.slider("Dias de treino na semana", 1, 7, 4)
+                tempo_sessao_p = st.slider("Tempo disponível por sessão (minutos)", 20, 120, 60, step=10)
+                escopo_tipo = st.radio(
+                    "Tipo de Prescrição",
+                    ["Ficha de Treino Semanal", "Periodização Mensal Completa"],
+                    horizontal=True
+                )
+                patologia_p = st.text_area(
+                    "Patologias, lesões, dores articulares ou restrições médicas",
+                    placeholder="Ex: Condromalácia patelar grau II, hérnia de disco L4-L5, hipertensão controlada..."
+                )
 
-                    # Função para gerar PDF limpo
-                    def criar_pdf(texto, aluno):
-                        pdf = FPDF()
-                        pdf.add_page()
-                        
-                        pdf.set_fill_color(30, 41, 59)
-                        pdf.set_text_color(255, 255, 255)
-                        pdf.set_font("Helvetica", "B", 15)
-                        pdf.cell(0, 12, "WILLIAM - PERIODIZACAO DE TREINO", ln=True, align="C", fill=True)
-                        
-                        pdf.set_text_color(0, 0, 0)
-                        pdf.set_font("Helvetica", "I", 10)
-                        cabecalho_limpo = aluno.encode("latin-1", "ignore").decode("latin-1")
-                        pdf.cell(0, 8, f"Aluno(a): {cabecalho_limpo} | Objetivo: {objetivo_p} | Ciclo: {mesociclo_p}", ln=True, align="C")
-                        pdf.ln(5)
+                gerar_treino = st.form_submit_button("Gerar Prescrição de Treino", type="primary")
 
-                        return pdf.output(dest="S").encode("latin-1")
+            if gerar_treino:
+                if not api_key:
+                    st.error("Insira sua API Key na barra lateral.")
+                elif not nome_aluno_p:
+                    st.warning("Por favor, informe o nome do aluno.")
+                else:
+                    with st.spinner("Gerando prescrição técnica de treinamento..."):
+                        try:
+                            sys_prompt_personal = """Você é um Personal Trainer sênior, especialista em fisiologia do exercício, biomecânica aplicada, cinesiologia e prescrição de treinamento individualizado.
+Regras obrigatórias:
+1. Estruture o treino de forma clara, técnica e profissional, separando por divisões (ex: Treino A, Treino B, Treino C) conforme a frequência semanal.
+2. Para cada exercício, especifique obrigatoriamente: nome do exercício, grupos musculares trabalhados, número de séries, faixa de repetições, tempo de descanso entre séries, cadência sugerida e dicas biomecânicas de execução segura.
+3. Nunca substitua o médico ou fisioterapeuta; caso haja patologias ou dores relatadas, priorize a integridade articular, evite movimentos contraindicados e justifique as adaptações."""
 
+                            escopo_pedido = (
+                                f"Monte uma ficha de treino semanal completa dividida em {dias_treino_p} sessões de até {tempo_sessao_p} minutos, "
+                                f"para o ambiente '{local_treino_p}', focada em {objetivo_p} (nível {nivel_p})."
+                                if escopo_tipo == "Ficha de Treino Semanal"
+                                else f"Monte uma periodização completa de 4 semanas (microciclos 1 a 4) com {dias_treino_p} treinos semanais de até {tempo_sessao_p} minutos, "
+                                f"para o ambiente '{local_treino_p}', focada em {objetivo_p} (nível {nivel_p}), detalhando a progressão de volume e intensidade."
+                            )
 
-                    pdf_bytes = criar_pdf(texto_ficha, nome_aluno_p)
+                            tem_patologia = bool(patologia_p and patologia_p.strip())
+                            bloco_clinico_prompt = (
+                                f"ATENÇÃO CLÍNICA E BIOMECÂNICA: O aluno apresenta o seguinte quadro clínico/restrição: '{patologia_p}'. "
+                                f"Adapte toda a seleção de exercícios para proteger as estruturas afetadas, liste explicitamente quais movimentos tradicionais foram evitados por contraindicação e inclua uma seção final de 'Cuidados e Recomendações Clínicas durante o Treino'."
+                                if tem_patologia
+                                else "O aluno não relatou patologias, dores ou restrições médicas. Aplique progressão padrão segura com aquecimento articular específico antes de cada sessão."
+                            )
 
-                    # Botões de Entrega Profissional (PDF, TXT e WhatsApp)
-                    st.markdown("---")
-                    st.markdown("#### 📤 Entrega e Compartilhamento")
-                    col_btn1, col_btn2, col_btn3 = st.columns(3)
+                            user_prompt_personal = f"""Crie uma prescrição profissional de treinamento para:
+- Aluno: {nome_aluno_p} | Idade: {idade_p} anos | Sexo: {sexo_p}
+- Antropometria: Peso {peso_p} kg | Altura {altura_p} cm
+- Nível: {nivel_p} | Objetivo: {objetivo_p} | Local: {local_treino_p}
 
-                    with col_btn1:
-                        st.download_button(
-                            label="📄 Baixar Ficha em PDF",
-                            data=pdf_bytes,
-                            file_name=f"Ficha_{nome_aluno_p.replace(' ', '_')}.pdf",
-                            mime="application/pdf"
+{escopo_pedido}
+
+{bloco_clinico_prompt}"""
+
+                            response = client.models.generate_content(
+                                model="gemini-3.5-flash-lite",
+                                contents=user_prompt_personal,
+                                config=types.GenerateContentConfig(
+                                    system_instruction=sys_prompt_personal
+                                )
+                            )
+                            st.success(f"Prescrição gerada com sucesso para {nome_aluno_p}!")
+                            st.markdown(response.text)
+                        except Exception as e:
+                            st.error(f"Erro ao gerar prescrição: {e}")
+
+        # --- ABA 1: CADASTRAR ALUNO ---
+        with t1:
+            with st.form("f_aluno", clear_on_submit=True):
+                nome = st.text_input("Nome do Aluno*")
+                objetivo = st.selectbox("Objetivo", ["Hipertrofia", "Emagrecimento", "Reabilitação / Saúde", "Força", "Condicionamento"])
+                condicao = st.selectbox("Patologia / Restrição*", ["Nenhuma restrição", "Hipertensão Arterial", "Hérnia de Disco / Lombar", "Condromalácia / Joelho", "Lesão de Ombro", "Diabetes", "Outra"])
+                obs_med = st.text_area("Detalhes do Laudo / Restrições")
+                if st.form_submit_button("💾 Salvar Aluno", use_container_width=True):
+                    if nome.strip():
+                        conn = get_conn()
+                        conn.execute(
+                            "INSERT INTO alunos (nome, objetivo, condicao_clinica, observacoes_medicas) VALUES (?,?,?,?)",
+                            (nome.strip(), objetivo, condicao, obs_med)
                         )
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Aluno {nome} salvo!")
+                else:
+                    st.error("Digite o nome.")
 
-                    with col_btn2:
-                        st.download_button(
-                            label="📝 Baixar em Texto (.txt)",
-                            data=texto_ficha,
-                            file_name=f"Ficha_{nome_aluno_p.replace(' ', '_')}.txt"
-                        )
+        conn = get_conn()
+        alunos = conn.execute("SELECT * FROM alunos ORDER BY nome").fetchall()
+        conn.close()
+        for a in alunos:
+            col_info, col_del = st.columns([6, 1])
+            with col_info:
+                st.info(
+                    f"👤 **{a['nome']}** ({a['objetivo']}) | 🩺 "
+                    f"**{a['condicao_clinica']}** — {a['observacoes_medicas']}"
+                )
+            with col_del:
+                if st.button("🗑️", key=f"del_aluno_{a['id']}"):
+                        conn = get_conn()
+                        conn.execute("DELETE FROM alunos WHERE id = ?", (a['id'],))
+                        conn.execute("DELETE FROM treinos WHERE aluno = ?", (a['nome'],))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
 
-                    with col_btn3:
-                        resumo_wpp = f"Olá {nome_aluno_p}! Segue o resumo do seu novo planejamento de treino ({objetivo_p} - {mesociclo_p}):\n\n" + texto_ficha[:1500] + "\n\n(Consulte o PDF completo para todos os detalhes e links de vídeo!)"
-                        link_wpp = f"https://wa.me/?text={urllib.parse.quote(resumo_wpp)}"
-                        st.link_button("📲 Enviar via WhatsApp", link_wpp)
+        # --- ABA 2: PRESCREVER TREINO MANUAL ---
+        with t2:
+            conn = get_conn()
+            alunos = conn.execute("SELECT * FROM alunos ORDER BY nome").fetchall()
+            conn.close()
 
-                except Exception as e:
-                    st.error(f"Erro ao gerar periodização: {e}")
+            if not alunos:
+                st.warning("Cadastre um aluno na aba '1️⃣ Cadastrar Aluno' primeiro.")
+            else:
+                sel = st.selectbox("Aluno:", [a["nome"] for a in alunos])
+                with st.form("f_treino_manual", clear_on_submit=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        div = st.selectbox("Divisão", ["Treino A", "Treino B", "Treino C", "Treino D", "Treino E", "Full Body"])
+                        grp = st.selectbox("Grupo Muscular", ["Peito", "Costas", "Ombros", "Bíceps", "Tríceps", "Quadríceps", "Posterior de Coxa", "Glúteos", "Panturrilha", "Abdômen", "Cardio"])
+                        ex_nome = st.selectbox("Nome do Exercício", ["Supino Reto", "Supino Inclinado", "Crucifixo", "Puxada Frontal", "Remada Curvada", "Remada Baixa", "Desenvolvimento", "Elevação Lateral", "Rosca Direta", "Tríceps Pulley", "Agachamento Livre", "Leg Press 45", "Cadeira Extensora", "Mesa Flexora", "Elevação Pélvica", "Panturrilha em Pé", "Abdominal Supra"])
 
+            if "Aluno" in perfil_p:
+                mostrar_area_aluno()
+                
+
+                    
 elif modulo == "💰 Controle Financeiro":
     st.markdown("### 💰 Gestão Financeira & Fluxo de Caixa")
 
